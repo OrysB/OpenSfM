@@ -7,21 +7,21 @@ import {
   OriginalPositionMode,
   RenderMode,
   Viewer,
-} from '../../node_modules/mapillary-js/dist/mapillary.module.js';
-import {EventEmitter} from '../util/EventEmitter.js';
-import {AxesRenderer} from '../renderer/AxesRenderer.js';
-import {BasemapRenderer} from '../renderer/BasemapRenderer.js';
-import {CustomRenderer} from '../renderer/CustomRenderer.js';
-import {EarthRenderer} from '../renderer/EarthRenderer.js';
-import {CommandExplainerControl} from '../control/CommandExplainerControl.js';
-import {InfoControl} from '../control/InfoControl.js';
-import {StatsControl} from '../control/StatsControl.js';
-import {ThumbnailControl} from '../control/ThumbnailControl.js';
-import {FolderName} from '../controller/DatController.js';
-import {OptionController} from '../controller/OptionController.js';
-import {FileController} from '../controller/FileController.js';
-import {OrbitCameraControls} from './OrbitCameraControls.js';
-import {convertCameraControlMode, CameraControlMode} from './modes.js';
+} from "../../node_modules/mapillary-js/dist/mapillary.module.js";
+import { EventEmitter } from "../util/EventEmitter.js";
+import { AxesRenderer } from "../renderer/AxesRenderer.js";
+import { BasemapRenderer } from "../renderer/BasemapRenderer.js";
+import { CustomRenderer } from "../renderer/CustomRenderer.js";
+import { EarthRenderer } from "../renderer/EarthRenderer.js";
+import { CommandExplainerControl } from "../control/CommandExplainerControl.js";
+import { InfoControl } from "../control/InfoControl.js";
+import { StatsControl } from "../control/StatsControl.js";
+import { ThumbnailControl } from "../control/ThumbnailControl.js";
+import { FolderName } from "../controller/DatController.js";
+import { OptionController } from "../controller/OptionController.js";
+import { FileController } from "../controller/FileController.js";
+import { OrbitCameraControls } from "./OrbitCameraControls.js";
+import { convertCameraControlMode, CameraControlMode } from "./modes.js";
 
 export class OpensfmViewer extends EventEmitter {
   constructor(options) {
@@ -31,8 +31,8 @@ export class OpensfmViewer extends EventEmitter {
     this._provider = options.provider;
 
     const document = window.document;
-    const container = document.createElement('div');
-    container.classList.add('opensfm-viewer');
+    const container = document.createElement("div");
+    container.classList.add("opensfm-viewer");
     options.container.appendChild(container);
 
     const cvm = CameraVisualizationMode.Homogeneous;
@@ -49,7 +49,7 @@ export class OpensfmViewer extends EventEmitter {
 
     const mapOptions = {
       basemapVisible: false,
-      tileServerUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      tileServerUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
       basemapOpacity: 1.0,
       basemapAltitude: -1.0,
       basemapTileCount: 121,
@@ -77,7 +77,7 @@ export class OpensfmViewer extends EventEmitter {
 
     this.customCameraControls = new OrbitCameraControls();
     viewer.attachCustomCameraControls(this.customCameraControls);
-    this._spatial = viewer.getComponent('spatial');
+    this._spatial = viewer.getComponent("spatial");
     this._viewer = viewer;
 
     const infoSize = 0.3;
@@ -102,8 +102,8 @@ export class OpensfmViewer extends EventEmitter {
         this._spatial.defaultConfiguration,
         spatialConfiguration,
         controllerOptions,
-        mapOptions,
-      ),
+        mapOptions
+      )
     );
 
     this._statsControl = new StatsControl({
@@ -128,13 +128,13 @@ export class OpensfmViewer extends EventEmitter {
     this._infoControl.setWidth(infoSize);
 
     this._fileController = new FileController({
-      classNames: ['opensfm-file-container'],
-      itemsUrl: 'items',
+      classNames: ["opensfm-file-container"],
+      itemsUrl: "recs",
       showExitButton: true,
     });
     this._optionController.dat.addController(
       this._fileController,
-      FolderName.IO,
+      FolderName.IO
     );
 
     this._makeCommands();
@@ -175,7 +175,7 @@ export class OpensfmViewer extends EventEmitter {
   initialize() {
     this._listen();
     this._move();
-    this._loadProvider().then(provider => {
+    this._loadProvider().then((provider) => {
       const items = Object.keys(provider.data.clusters);
       this._optionController.dat.addReconstructionItems(items);
       this._statsControl.addRawData(provider.rawData);
@@ -191,71 +191,77 @@ export class OpensfmViewer extends EventEmitter {
   }
 
   _listen() {
-    this._fileController.on('load', event => this._onFileLoad(event));
+    this._fileController.on("load", (event) => this._onFileLoad(event));
 
     const optionController = this._optionController;
-    optionController.on('axesvisible', event => this._onAxesVisible(event));
-    optionController.on('cameracontrolmode', event =>
-      this._onCameraControlMode(event),
+    optionController.on("axesvisible", (event) => this._onAxesVisible(event));
+    optionController.on("cameracontrolmode", (event) =>
+      this._onCameraControlMode(event)
     );
-    optionController.on('camerasize', event => this._onCameraSize(event));
-    optionController.on('cameravisualizationmode', event =>
-      this._onCameraVisualizationMode(event),
+    optionController.on("camerasize", (event) => this._onCameraSize(event));
+    optionController.on("cameravisualizationmode", (event) =>
+      this._onCameraVisualizationMode(event)
     );
-    optionController.on('commandsvisible', event =>
-      this._onCommandsVisible(event),
+    optionController.on("commandsvisible", (event) =>
+      this._onCommandsVisible(event)
     );
-    optionController.on('dattoggle', event => this._onDatToggle(event));
-    optionController.on('imagesvisible', event => this._onImagesVisible(event));
-    optionController.on('infosize', event => this._onInfoSize(event));
-    optionController.on('originalpositionmode', event =>
-      this._onOriginalPositionMode(event),
+    optionController.on("dattoggle", (event) => this._onDatToggle(event));
+    optionController.on("imagesvisible", (event) =>
+      this._onImagesVisible(event)
     );
-    optionController.on('pointsize', event => this._onPointSize(event));
-    optionController.on('pointsvisible', event => this._onPointsVisible(event));
-    optionController.on('thumbnailvisible', event =>
-      this._onThumbnailVisible(event),
+    optionController.on("infosize", (event) => this._onInfoSize(event));
+    optionController.on("originalpositionmode", (event) =>
+      this._onOriginalPositionMode(event)
     );
-    optionController.on('cellsvisible', event => this._onCellsVisible(event));
-    optionController.on('gridvisible', event => this._onGridVisible(event));
-    optionController.on('basemapvisible', event =>
-      this._onBasemapVisible(event),
+    optionController.on("pointsize", (event) => this._onPointSize(event));
+    optionController.on("pointsvisible", (event) =>
+      this._onPointsVisible(event)
     );
-    optionController.on('basemapopacity', event =>
-      this._onBasemapOpacity(event),
+    optionController.on("thumbnailvisible", (event) =>
+      this._onThumbnailVisible(event)
     );
-    optionController.on('basemapaltitude', event =>
-      this._onBasemapAltitude(event),
+    optionController.on("cellsvisible", (event) => this._onCellsVisible(event));
+    optionController.on("gridvisible", (event) => this._onGridVisible(event));
+    optionController.on("basemapvisible", (event) =>
+      this._onBasemapVisible(event)
     );
-    optionController.on('basemaptilecount', event =>
-      this._onBasemapTileCount(event),
+    optionController.on("basemapopacity", (event) =>
+      this._onBasemapOpacity(event)
     );
-    optionController.on('basemapzoomlevel', event =>
-      this._onBasemapZoomLevel(event),
+    optionController.on("basemapaltitude", (event) =>
+      this._onBasemapAltitude(event)
     );
-    optionController.on('tileserverurl', event => this._onTileServerUrl(event));
-
-    optionController.on('reconstructionsselected', event =>
-      this._onReconstructionsSelected(event),
+    optionController.on("basemaptilecount", (event) =>
+      this._onBasemapTileCount(event)
     );
-    optionController.on('statsvisible', event => this._onStatsVisible(event));
-
-    this._provider.on('opensfmdatacreate', event =>
-      this._onProviderOpensfmDataCreate(event),
+    optionController.on("basemapzoomlevel", (event) =>
+      this._onBasemapZoomLevel(event)
+    );
+    optionController.on("tileserverurl", (event) =>
+      this._onTileServerUrl(event)
     );
 
-    this._viewer.on('image', event => this._onViewerImage(event));
-    this._viewer.on('mousemove', event => this._onViewerMouseMove(event));
+    optionController.on("reconstructionsselected", (event) =>
+      this._onReconstructionsSelected(event)
+    );
+    optionController.on("statsvisible", (event) => this._onStatsVisible(event));
+
+    this._provider.on("opensfmdatacreate", (event) =>
+      this._onProviderOpensfmDataCreate(event)
+    );
+
+    this._viewer.on("image", (event) => this._onViewerImage(event));
+    this._viewer.on("mousemove", (event) => this._onViewerMouseMove(event));
   }
 
   _loadProvider() {
     const provider = this._provider;
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       if (provider.loaded) {
         resolve(provider);
         return;
       }
-      provider.on('load', event => {
+      provider.on("load", (event) => {
         resolve(event.target);
       });
     });
@@ -263,12 +269,12 @@ export class OpensfmViewer extends EventEmitter {
 
   _makeCommands() {
     const toggleCommand = {
-      key: 'p',
-      value: 'toggleFileLoader',
+      key: "p",
+      value: "toggleFileLoader",
       handler: async () => await this._fileController.toggle(),
     };
     this._optionController.key.addCommand(toggleCommand);
-    this._commandExplainerControl.add({[toggleCommand.key]: toggleCommand});
+    this._commandExplainerControl.add({ [toggleCommand.key]: toggleCommand });
   }
 
   async _move() {
@@ -279,13 +285,13 @@ export class OpensfmViewer extends EventEmitter {
       const loadedProvider = await this._loadProvider();
       this._moveTo(
         this._viewer,
-        this._getRandomImageId(loadedProvider.data.images),
+        this._getRandomImageId(loadedProvider.data.images)
       );
     }
   }
 
   _moveTo(viewer, imageId) {
-    viewer.moveTo(imageId).catch(error => console.error(error));
+    viewer.moveTo(imageId).catch((error) => console.error(error));
   }
 
   _onAxesVisible(event) {
@@ -298,11 +304,11 @@ export class OpensfmViewer extends EventEmitter {
   }
 
   _onCameraSize(event) {
-    this._configure({cameraSize: event.size});
+    this._configure({ cameraSize: event.size });
   }
 
   _onCameraVisualizationMode(event) {
-    this._configure({cameraVisualizationMode: event.mode});
+    this._configure({ cameraVisualizationMode: event.mode });
   }
 
   _onCommandsVisible(event) {
@@ -324,8 +330,8 @@ export class OpensfmViewer extends EventEmitter {
 
   _onCameraControlMode(event) {
     const mode = event.mode;
-    const direction = 'direction';
-    const zoom = 'zoom';
+    const direction = "direction";
+    const zoom = "zoom";
 
     if (mode === CameraControlMode.STREET) {
       this._viewer.activateComponent(direction);
@@ -335,12 +341,12 @@ export class OpensfmViewer extends EventEmitter {
       this._viewer.deactivateComponent(zoom);
     }
 
-    this._earthRenderer.configure({mode});
+    this._earthRenderer.configure({ mode });
     this._viewer.setCameraControls(convertCameraControlMode(mode));
   }
 
   _onCellsVisible(event) {
-    this._configure({cellsVisible: event.visible});
+    this._configure({ cellsVisible: event.visible });
   }
 
   async _onFileLoad(event) {
@@ -396,9 +402,9 @@ export class OpensfmViewer extends EventEmitter {
 
   _onImagesVisible(event) {
     if (event.visible) {
-      this._viewer.activateComponent('image');
+      this._viewer.activateComponent("image");
     } else {
-      this._viewer.deactivateComponent('image');
+      this._viewer.deactivateComponent("image");
     }
   }
 
@@ -414,15 +420,15 @@ export class OpensfmViewer extends EventEmitter {
   }
 
   _onOriginalPositionMode(event) {
-    this._configure({originalPositionMode: event.mode});
+    this._configure({ originalPositionMode: event.mode });
   }
 
   _onPointSize(event) {
-    this._configure({pointSize: event.size});
+    this._configure({ pointSize: event.size });
   }
 
   _onPointsVisible(event) {
-    this._configure({pointsVisible: event.visible});
+    this._configure({ pointsVisible: event.visible });
   }
 
   _onProviderOpensfmDataCreate(event) {
@@ -432,7 +438,7 @@ export class OpensfmViewer extends EventEmitter {
   }
 
   _onReconstructionsSelected(event) {
-    const filter = ['in', 'clusterId', ...event.active];
+    const filter = ["in", "clusterId", ...event.active];
     this._viewer.setFilter(filter);
   }
 

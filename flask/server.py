@@ -1,71 +1,78 @@
 import argparse
-import os
+import logging;
+from os.path import (
+    join,
+    isfile,
+    relpath
+)
+
+from os import (
+    walk
+)
+
+import subprocess
+
 from typing import List
 
 from flask import (
     Flask,
     abort,
-    jsonify,
     Response,
     send_file,
+    jsonify
 )
 
 
 app = Flask(__name__, static_folder="./", static_url_path="")
 
 
-DATA = "data"
+DATA = "../data"
 IMAGES = "images"
 
 
-datapath = None
+@app.route("/<path:dataset>/viewer", )
+def open_viewer(dataset) -> Response:
+    return send_file(join(app.static_folder, "index.html"))
 
 
-@app.route("/")
-def index() -> Response:
-    return send_file(os.path.join(app.static_folder, "index.html"))
-
-
-@app.route("/items")
-def get_recs() -> Response:
-    if datapath is None:
-        return jsonify({"items": []})
-
+@app.route("/<path:dataset>/recs")
+def get_recs(dataset) -> Response:
     reconstructions = [
         {
             "children": [],
             "name": rec,
             "type": "RECONSTRUCTION",
-            "url": [os.path.join(DATA, rec)],
+            "url": [join("/", "data", dataset, rec)],
         }
-        for rec in reconstruction_files(datapath)
+        for rec in reconstruction_files(join(DATA, dataset))
     ]
 
-    return jsonify({"items": reconstructions})
+    return jsonify({ "recs": reconstructions})
 
 
-@app.route("/data/<path:subpath>")
-def get_data(subpath) -> Response:
-    path = os.path.join(datapath, subpath)
-    return verified_send(path)
+@app.route("/data/<path:dataset>/<path:subpath>")
+def get_data(dataset, subpath) -> Response:
+    return verified_send(join(DATA, dataset, subpath))
 
+@app.route("/static/<path:subpath>")
+def get_static(subpath) -> Response:
+    return verified_send(join(app.static_folder, subpath))
 
-@app.route("/image/<shot_id>")
-def get_image(shot_id) -> Response:
-    path = os.path.join(datapath, IMAGES, shot_id)
+@app.route("/<path:dataset>/image/<shot_id>")
+def get_image(dataset, shot_id) -> Response:
+    path = join(DATA, dataset, IMAGES, shot_id)
     return verified_send(path)
 
 
 def json_files(path) -> List[str]:
     """List all json files under a dir recursively."""
-    paths = []
-    for root, _, files in os.walk(datapath):
+    found = []
+    logging.warning(path)
+    for root, _, files in walk(path):
         for file in files:
             if ".json" in file:
-                absolute = os.path.join(root, file)
-                relative = os.path.relpath(absolute, path)
-                paths.append(relative)
-    return paths
+                found.append(file)
+    return found
 
 
 def probably_reconstruction(file) -> bool:
@@ -80,7 +87,7 @@ def reconstruction_files(path) -> List[str]:
 
 
 def verified_send(file) -> Response:
-    if os.path.isfile(file):
+    if isfile(file):
         return send_file(file)
     else:
         # pyre-fixme[7]: Expected `Response` but got implicit return value of `None`.
@@ -89,7 +96,6 @@ def verified_send(file) -> Response:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-d", "--dataset", help="dataset to visualize")
     parser.add_argument(
         "-p", "--port", type=int, default=8080, help="port to bind server to"
     )
@@ -98,9 +104,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    global datapath
-    if args.dataset is not None:
-        datapath = os.path.abspath(args.dataset)
     return app.run(host="::", port=args.port)
 
 
