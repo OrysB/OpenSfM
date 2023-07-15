@@ -27,6 +27,9 @@ data/berlin/*
 !data/berlin/config.yaml
 !data/berlin/images
 
+# Ignore Docker version file
+VERSION
+
 # Ignore virtualenv files
 env/*
-venv/*
+venv

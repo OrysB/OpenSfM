@@ -1,0 +1,148 @@
+VERSION_PATH="VERSION"
+DOCKERFILE_PATH="."
+LATEST=false
+
+print_usage() {
+  echo -e "Usage: generateDockerImage.sh [options]
+
+  options:
+    -n, --name*             name of the docker image
+    -f, --file              \e[3mpath/to/DOCKERFILE\e[0m (e.g. "./src")
+    -m, --major             sets the major version number, will overwrite version specified in VERSION file, resets the build version to 0
+    -i, --minor             sets the minor version number, will overwrite version specified in VERSION file, resets the build version to 0
+    -v, --version           \e[3mpath/to/VERSION\e[0m file (e.g. "./src")
+    -l, --latest            ignores all versioning and sets docker tag to latest
+    -t, --tag               ignores all versioning and sets docker tag to value
+    -h, --help              prints this information
+  
+  * = required"
+  exit 0
+}
+
+while test $# -gt 0; do
+  case "$1" in
+    -n|--name) 
+      shift
+      if test $# -gt 0 
+      then
+        export NAME=$1
+      fi
+      shift
+      ;;
+    -m|--major) 
+      shift
+      if test $# -gt 0; 
+      then
+        export MAJOR=$1
+      fi
+      shift
+      ;;
+    -i|--minor)
+      shift
+      if test $# -gt 0; 
+      then
+        export MINOR=$1
+      fi
+      shift
+      ;;
+    -f|--file)
+      shift
+      if test $# -gt 0; 
+      then
+        DOCKERFILE_PATH=$1
+      fi
+      shift
+      ;;
+    -v|--version)
+      shift
+      if test $# -gt 0; 
+      then
+        VERSION_PATH=$1"/VERSION"
+      fi
+      shift
+      ;;
+    -l|--latest)
+      shift
+      LATEST=true
+      shift
+      ;;
+    -t|--tag)
+      shift
+      if test $# -gt 0; 
+      then
+        export TAG=$1
+      fi
+      shift
+      ;;
+    -h|--help) print_usage ;;
+    *) print_usage
+       break
+       ;;
+  esac
+done
+
+if [[ -z $NAME ]]
+then
+  echo -e "missing image name; use -n \e[3mname\e[0m"
+  exit 1
+fi
+
+if $LATEST
+then
+    echo "build -t ${NAME}:"latest" $DOCKERFILE_PATH"
+    docker build -t ${NAME}:"latest" $DOCKERFILE_PATH
+    exit 0
+fi
+
+if ! [[ -z $TAG ]]
+then
+  echo "docker build -t "${NAME}:${TAG}" $DOCKERFILE_PATH"
+  docker build -t ${NAME}:${TAG} $DOCKERFILE_PATH
+  exit 0
+fi
+
+if [ -f ${VERSION_PATH} ];
+then
+    VERSION=$(<${VERSION_PATH})
+    IFS='.' read -ra NEWVERSION <<< "$VERSION"
+    NEWVERSION[2]=$(($((${NEWVERSION[2]}))+1))
+    if [[ -z "$MAJOR" ]]
+    then
+        if [[ -z "$MINOR" ]]
+        then
+            echo "${NEWVERSION[0]}.${NEWVERSION[1]}.${NEWVERSION[2]}">$VERSION_PATH
+        else
+            echo "${NEWVERSION[0]}.${MINOR}.0">$VERSION_PATH
+        fi
+    else
+        if [[ -z "$MINOR" ]]
+        then
+            echo "${MAJOR}.${NEWVERSION[1]}.0">$VERSION_PATH
+        else
+            echo "${MAJOR}.${MINOR}.0">$VERSION_PATH
+        fi
+        
+    fi
+else
+    if [[ -z "$MAJOR" ]]
+    then
+        if [[ -z "$MINOR" ]]
+        then
+            echo "0.0.0">$VERSION_PATH
+        else
+            echo "0.${MINOR}.0">$VERSION_PATH
+        fi
+    else
+        if [[ -z "$MINOR" ]]
+        then
+            echo "${MAJOR}.0.0">$VERSION_PATH
+        else
+            echo "${MAJOR}.${MINOR}.0">$VERSION_PATH
+        fi
+        
+    fi
+fi
+
+VERSION=$(<${VERSION_PATH})
+echo "docker build -t ${NAME}:${VERSION} $DOCKERFILE_PATH"
+docker build -t ${NAME}:${VERSION} $DOCKERFILE_PATH

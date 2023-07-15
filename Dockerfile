@@ -19,6 +19,7 @@ RUN apt-get update \
         python3-scipy \
         python3-yaml \
         curl \
+        redis-server \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -29,3 +30,15 @@ WORKDIR /source/OpenSfM
 
 RUN pip3 install -r requirements.txt && \
     python3 setup.py build
+
+RUN ["chmod", "+x", "./entrypoint.sh"]
+
+RUN ["mkdir", "/log"] 
+
+RUN ["mkdir", "/log/celery"]
+
+RUN ["touch", "/log/celery/celery.log"]
+
+RUN ["touch", "/run/celery.pid"]
+
+ENTRYPOINT [ "./entrypoint.sh" ]

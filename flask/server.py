@@ -1,16 +1,19 @@
 import argparse
-import logging;
+from dotenv import load_dotenv
+
+from celery import Celery, Task, shared_task
+from celery.result import AsyncResult
+from subprocess import Popen
+
+import os
 from os.path import (
     join,
-    isfile,
-    relpath
+    isfile
 )
 
 from os import (
     walk
 )
-
-import subprocess
 
 from typing import List
 
@@ -19,16 +22,101 @@ from flask import (
     abort,
     Response,
     send_file,
-    jsonify
+    jsonify,
+    request,
+    redirect
 )
 
+load_dotenv()
+
+ROOT_DIR = os.getenv("ROOT_DIR")
+DATA_DIR = os.getenv("DATA_DIR")
+DATA = join(ROOT_DIR, DATA_DIR)
+IMAGES = os.getenv("IMAGES_DIR")
+
+COMMAND_LIST = ["all", "extract_metadata", "detect_features", "match_features", "create_tracks", "reconstruct", "mesh", "undistort", "compute_depthmaps"]
+
+#source https://flask.palletsprojects.com/en/latest/patterns/celery/
+def celery_init_app(app: Flask) -> Celery:
+    class FlaskTask(Task):
+        def __call__(self, *args: object, **kwargs: object) -> object:
+            with app.app_context():
+                return self.run(*args, **kwargs)
+
+    celery_app = Celery(app.name, task_cls=FlaskTask)
+    celery_app.config_from_object(app.config["CELERY"])
+    celery_app.set_default()
+    app.extensions["celery"] = celery_app
+    return celery_app
 
 app = Flask(__name__, static_folder="./", static_url_path="")
+app.config.from_mapping(
+    CELERY=dict(
+        broker_url=os.getenv("CELERY_BROKER_URL"),
+        result_backend=os.getenv("CELERY_RESULT_BACKEND")
+    ),
+)
+celery_app = celery_init_app(app)
+
+@shared_task(bind = True, ignore_result=False, track_started=True)
+async def background(self, dataset, command):
+    with open(join(ROOT_DIR, DATA, dataset, "logs.txt"), 'w+') as logFile:
+        try:
+            task = Popen("bash "+join(ROOT_DIR,"bin", command)+" "+join(DATA, dataset), stdout=logFile, stderr=logFile, shell=True)
+            self.update_state(state="PROGRESS",
+                            meta={'code': 102 })
+            await task.wait()
+            if task.returncode == 0:
+                self.update_state(state="SUCCESS",
+                                meta={'code': 200 })
+            else:
+                self.update_state(state="FAILURE",
+                                meta={'code': 400 })
+        except:
+            self.update_state(state="FAILURE",
+                            meta={'code': 500 })
 
 
-DATA = "../data"
-IMAGES = "images"
+#source: https://stackoverflow.com/questions/57104398/python-flask-how-to-run-subprocess-pass-a-command
+@app.route("/<path:dataset>/run", methods = ["POST"])
+def run(dataset):
+    req_json = request.get_json();
+    if req_json is None or "command" not in req_json:
+        abort(400, description="missing command")
 
+    if req_json["command"] not in COMMAND_LIST:
+        abort(400, description="command not supported")
+
+    command = "opensfm_run_all"
+
+    if req_json["command"] != "all":
+        command = "opensfm " + req_json["command"]
+
+    last = AsyncResult(dataset)
+    if last.state == "PROGRESS":
+        return redirect("status", code=302)
+
+    background.apply_async((dataset, command), task_id = dataset, countdown = 10)
+    return redirect("status", code=302)
+
+
+@app.route("/<path:dataset>/status", methods =["GET"])
+def get_status(dataset):
+        task = AsyncResult(dataset)
+        code = task.info.get('code', 102)
+        
+        response = {
+            'code': code,
+            'state': task.state
+        }
+        if task.state != "PROGRESS":
+            with open(join(ROOT_DIR, DATA, dataset, "logs.txt"), "r") as logFile:    
+                response = {
+                    'code': code,
+                    'state': task.state,
+                    'logs': "\n".join(logFile.readlines())
+                }
+        return response
 
 @app.route("/<path:dataset>/viewer", )
 def open_viewer(dataset) -> Response:
@@ -67,7 +155,6 @@ def get_image(dataset, shot_id) -> Response:
 def json_files(path) -> List[str]:
     """List all json files under a dir recursively."""
     found = []
-    logging.warning(path)
     for root, _, files in walk(path):
         for file in files:
             if ".json" in file:
@@ -100,7 +187,6 @@ def parse_args() -> argparse.Namespace:
         "-p", "--port", type=int, default=8080, help="port to bind server to"
     )
     return parser.parse_args()
-
 
 def main() -> None:
     args = parse_args()

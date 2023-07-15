@@ -9,11 +9,13 @@
 
 ### Serve datasets
 
-1. `python3 server.py`
+1. Run `python3 server.py` from flask dir
    - Serve the reconstructions for datasets
 2. Browse to `http://localhost:8080/<path:dataset>/viewer`
    - Where `dataset` is the path to the dataset (e.g. `berlin`, `lund` or `mapillary/qube`)
 3. Select the reconstruction file
+4. to use extended api (execution of commands via flask)
+   - run `celery -A flask/server.celery_app worker --loglevel=info` in ./flask
 
 ### Load datasets manually
 

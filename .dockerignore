@@ -15,7 +15,8 @@
 !requirements.txt
 !setup.cfg
 !setup.py
-!viewer
+!flask
+!entrypoint.sh
 
 # Picking exceptions
 doc/build
