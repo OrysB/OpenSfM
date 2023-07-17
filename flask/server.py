@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from celery import Celery, Task, shared_task
 from celery.result import AsyncResult
 from subprocess import Popen
+from werkzeug.utils import secure_filename
 
 import os
 from os.path import (
@@ -24,7 +25,8 @@ from flask import (
     send_file,
     jsonify,
     request,
-    redirect
+    redirect,
+    flash
 )
 
 load_dotenv()
@@ -35,6 +37,7 @@ DATA = join(ROOT_DIR, DATA_DIR)
 IMAGES = os.getenv("IMAGES_DIR")
 
 COMMAND_LIST = ["all", "extract_metadata", "detect_features", "match_features", "create_tracks", "reconstruct", "mesh", "undistort", "compute_depthmaps"]
+ALLOWED_IMAGE_FORMATS = ['png', 'jpg']
 
 #source https://flask.palletsprojects.com/en/latest/patterns/celery/
 def celery_init_app(app: Flask) -> Celery:
@@ -50,6 +53,7 @@ def celery_init_app(app: Flask) -> Celery:
     return celery_app
 
 app = Flask(__name__, static_folder="./", static_url_path="")
+app.secret_key = os.getenv("SECRET_KEY")
 app.config.from_mapping(
     CELERY=dict(
         broker_url=os.getenv("CELERY_BROKER_URL"),
@@ -79,7 +83,7 @@ async def background(self, dataset, command):
 
 #source: https://stackoverflow.com/questions/57104398/python-flask-how-to-run-subprocess-pass-a-command
 @app.route("/<path:dataset>/run", methods = ["POST"])
-def run(dataset):
+def run(dataset) -> Response:
     req_json = request.get_json();
     if req_json is None or "command" not in req_json:
         abort(400, description="missing command")
@@ -101,7 +105,7 @@ def run(dataset):
 
 
 @app.route("/<path:dataset>/status", methods =["GET"])
-def get_status(dataset):
+def get_status(dataset) -> Response:
         task = AsyncResult(dataset)
         code = task.info.get('code', 102)
         
@@ -146,10 +150,25 @@ def get_data(dataset, subpath) -> Response:
 def get_static(subpath) -> Response:
     return verified_send(join(app.static_folder, subpath))
 
-@app.route("/<path:dataset>/image/<shot_id>")
+@app.route("/<path:dataset>/image/<shot_id>", methods =["GET"])
 def get_image(dataset, shot_id) -> Response:
     path = join(DATA, dataset, IMAGES, shot_id)
     return verified_send(path)
+
+@app.route("/<path:dataset>/image", methods =["POST"])
+def post_image(dataset):
+    if 'file' not in request.files:
+            return 'missing file', 400
+    file = request.files['file']
+    if file.filename == '':
+            return 'missing filename', 400
+    if file.filename.split('.')[-1] not in ALLOWED_IMAGE_FORMATS:
+            return 'file format not supported', 400
+    filename = secure_filename(file.filename)
+    directory = join(DATA, dataset, IMAGES, filename)
+    os.makedirs(os.path.dirname(directory), exist_ok=True)
+    file.save(directory)
+    return redirect(join("image", filename)), 301
 
 
 def json_files(path) -> List[str]:
