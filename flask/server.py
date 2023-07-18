@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 from celery import Celery, Task, shared_task
 from celery.result import AsyncResult
-from subprocess import Popen
+from subprocess import Popen, CalledProcessError
 from werkzeug.utils import secure_filename
 
 import os
@@ -26,8 +26,10 @@ from flask import (
     jsonify,
     request,
     redirect,
-    flash
 )
+
+import uuid
+import time
 
 load_dotenv()
 
@@ -39,7 +41,6 @@ IMAGES = os.getenv("IMAGES_DIR")
 COMMAND_LIST = ["all", "extract_metadata", "detect_features", "match_features", "create_tracks", "reconstruct", "mesh", "undistort", "compute_depthmaps"]
 ALLOWED_IMAGE_FORMATS = ['png', 'jpg']
 
-#source https://flask.palletsprojects.com/en/latest/patterns/celery/
 def celery_init_app(app: Flask) -> Celery:
     class FlaskTask(Task):
         def __call__(self, *args: object, **kwargs: object) -> object:
@@ -63,25 +64,30 @@ app.config.from_mapping(
 celery_app = celery_init_app(app)
 
 @shared_task(bind = True, ignore_result=False, track_started=True)
-async def background(self, dataset, command):
-    with open(join(ROOT_DIR, DATA, dataset, "logs.txt"), 'w+') as logFile:
+def background(self, dataset, command, task_id):
+    path = join(ROOT_DIR, DATA, dataset, "logs", task_id+".txt");
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w+') as logFile:
         try:
             task = Popen("bash "+join(ROOT_DIR,"bin", command)+" "+join(DATA, dataset), stdout=logFile, stderr=logFile, shell=True)
             self.update_state(state="PROGRESS",
                             meta={'code': 102 })
-            await task.wait()
-            if task.returncode == 0:
-                self.update_state(state="SUCCESS",
+            while task.poll() is None:
+                time.sleep(5)
+                self.update_state(state="PROGRESS",
                                 meta={'code': 200 })
             else:
-                self.update_state(state="FAILURE",
-                                meta={'code': 400 })
-        except:
+                if task.returncode == 0:
+                    self.update_state(state="SUCCESS",
+                                    meta={'code': 200 })
+                else:
+                    self.update_state(state="FAILURE",
+                                    meta={'code': 400 })
+        except Exception as e:
             self.update_state(state="FAILURE",
                             meta={'code': 500 })
+            logFile.write(str(e))
 
-
-#source: https://stackoverflow.com/questions/57104398/python-flask-how-to-run-subprocess-pass-a-command
 @app.route("/<path:dataset>/run", methods = ["POST"])
 def run(dataset) -> Response:
     req_json = request.get_json();
@@ -99,33 +105,62 @@ def run(dataset) -> Response:
     last = AsyncResult(dataset)
     if last.state == "PROGRESS":
         return redirect("status", code=302)
+    task_id = str(uuid.uuid1())
+    background.apply_async((dataset, command, task_id), task_id = task_id)
+    return redirect(join("status", task_id), code=302)
 
-    background.apply_async((dataset, command), task_id = dataset, countdown = 10)
-    return redirect("status", code=302)
+@app.route("/<path:dataset>/allTasks")
+def get_status_all(dataset) -> Response:
+    tasks = celery_app.tasks.keys()
+    return jsonify(tasks)
 
-
-@app.route("/<path:dataset>/status", methods =["GET"])
-def get_status(dataset) -> Response:
-        task = AsyncResult(dataset)
-        code = task.info.get('code', 102)
-        
+@app.route("/<path:dataset>/status/<task_id>", methods =["GET"])
+def get_status(dataset, task_id) -> Response:
+        task = AsyncResult(task_id)        
+       
         response = {
-            'code': code,
-            'state': task.state
+            'code': 102,
+            'state': task.state,
         }
-        if task.state != "PROGRESS":
-            with open(join(ROOT_DIR, DATA, dataset, "logs.txt"), "r") as logFile:    
+        # unknown tasks will return with state "PENDING" (see celery documentation)
+        if task.state == "PENDING":
+                #finished processes that might have run before a restart of celery, will have left their log file
+                try:
+                    with open(join(ROOT_DIR, DATA, dataset, "logs", task_id + ".txt"), "r") as logFile:
+                        response = {
+                            'code': 200,
+                            'state': "EXPIRED",
+                            'logs': "\n".join(logFile.readlines())
+                        }
+                except Exception as e:
+                    response = {
+                        'code': 404,
+                        'state': 'NOT FOUND',
+                    }
+        elif task.state == "PROGRESS":
                 response = {
-                    'code': code,
+                    'code': task.info.get('code', 102),
                     'state': task.state,
-                    'logs': "\n".join(logFile.readlines())
                 }
-        return response
+        elif task.state == "SUCCESS":
+                with open(join(ROOT_DIR, DATA, dataset, "logs", task_id + ".txt"), "r") as logFile:  
+                    response = {
+                        'code': task.info.get('code', 102),
+                        'state': task.state,
+                        'logs': "\n".join(logFile.readlines())
+                    }
+        elif task.state == "FAILURE":
+                with open(join(ROOT_DIR, DATA, dataset, "logs", task_id + ".txt"), "r") as logFile:  
+                    response = {
+                        'code': task.info.get('code', 102),
+                        'state': task.state,
+                        'logs': "\n".join(logFile.readlines())
+                    }
+        return jsonify(response)
 
 @app.route("/<path:dataset>/viewer", )
 def open_viewer(dataset) -> Response:
     return send_file(join(app.static_folder, "index.html"))
-
 
 @app.route("/<path:dataset>/recs")
 def get_recs(dataset) -> Response:
@@ -141,7 +176,6 @@ def get_recs(dataset) -> Response:
 
     return jsonify({ "recs": reconstructions})
 
-
 @app.route("/data/<path:dataset>/<path:subpath>")
 def get_data(dataset, subpath) -> Response:
     return verified_send(join(DATA, dataset, subpath))
@@ -156,7 +190,7 @@ def get_image(dataset, shot_id) -> Response:
     return verified_send(path)
 
 @app.route("/<path:dataset>/image", methods =["POST"])
-def post_image(dataset):
+def post_image(dataset) -> Response:
     if 'file' not in request.files:
             return 'missing file', 400
     file = request.files['file']
@@ -165,9 +199,9 @@ def post_image(dataset):
     if file.filename.split('.')[-1] not in ALLOWED_IMAGE_FORMATS:
             return 'file format not supported', 400
     filename = secure_filename(file.filename)
-    directory = join(DATA, dataset, IMAGES, filename)
-    os.makedirs(os.path.dirname(directory), exist_ok=True)
-    file.save(directory)
+    path = join(DATA, dataset, IMAGES, filename)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    file.save(path)
     return redirect(join("image", filename)), 301
 
 

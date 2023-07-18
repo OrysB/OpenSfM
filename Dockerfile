@@ -32,13 +32,4 @@ RUN pip3 install -r requirements.txt && \
     python3 setup.py build
 
 RUN ["chmod", "+x", "./entrypoint.sh"]
-
-RUN ["mkdir", "/log"] 
-
-RUN ["mkdir", "/log/celery"]
-
-RUN ["touch", "/log/celery/celery.log"]
-
-RUN ["touch", "/run/celery.pid"]
-
 ENTRYPOINT [ "./entrypoint.sh" ]

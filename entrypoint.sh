@@ -2,10 +2,11 @@
 
 redis-server --daemonize yes
 
-cd flask
+chmod +x ./run_celery.sh
+chmod +x ./run_flask.sh
 
-celery -A server.celery_app worker --detach --loglevel=info \
-    --pidfile="/run/celery.pid" \
-    --logfile="/log/celery/celery.log"
+sh ./run_celery.sh & PID_CELERY=$!
+sh ./run_flask.sh & PID_FLASK=$!
 
-python3 server.py
+wait $PID_CELERY
+wait $PID_FLASK

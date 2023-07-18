@@ -17,6 +17,8 @@
 !setup.py
 !flask
 !entrypoint.sh
+!run_celery.sh
+!run_flask.sh
 
 # Picking exceptions
 doc/build
