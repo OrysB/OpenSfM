@@ -3,18 +3,18 @@ from dotenv import load_dotenv
 
 from celery import Celery, Task, shared_task
 from celery.result import AsyncResult
-from subprocess import Popen, CalledProcessError
+from subprocess import Popen
 from werkzeug.utils import secure_filename
 
 import os
+from os import (
+    walk
+)
 from os.path import (
     join,
     isfile
 )
-
-from os import (
-    walk
-)
+import fnmatch
 
 from typing import List
 
@@ -64,7 +64,7 @@ app.config.from_mapping(
 celery_app = celery_init_app(app)
 
 @shared_task(bind = True, ignore_result=False, track_started=True)
-def background(self, dataset, command, task_id):
+def sfm_background(self, dataset, command, task_id):
     path = join(ROOT_DIR, DATA, dataset, "logs", task_id+".txt");
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w+') as logFile:
@@ -106,18 +106,25 @@ def run(dataset) -> Response:
     if last.state == "PROGRESS":
         return redirect("status", code=302)
     task_id = str(uuid.uuid1())
-    background.apply_async((dataset, command, task_id), task_id = task_id)
+    sfm_background.apply_async((dataset, command, task_id), task_id = task_id)
     return redirect(join("status", task_id), code=302)
 
-@app.route("/<path:dataset>/allTasks")
+@app.route("/<path:dataset>/tasks")
 def get_status_all(dataset) -> Response:
-    tasks = celery_app.tasks.keys()
-    return jsonify(tasks)
+    path = join(DATA, dataset, "logs");
+    if not os.path.isdir(path):
+         return 'NOT FOUND', 404
+    task_ids = []
+    for file in os.listdir(path):
+        if fnmatch.fnmatch(file, '*.txt'):
+            task_ids.append(file.replace('.txt', ''))
+    return task_ids
 
 @app.route("/<path:dataset>/status/<task_id>", methods =["GET"])
 def get_status(dataset, task_id) -> Response:
         task = AsyncResult(task_id)        
        
+        logsPath = join(ROOT_DIR, DATA, dataset, "logs", task_id + ".txt")
         response = {
             'code': 102,
             'state': task.state,
@@ -126,31 +133,36 @@ def get_status(dataset, task_id) -> Response:
         if task.state == "PENDING":
                 #finished processes that might have run before a restart of celery, will have left their log file
                 try:
-                    with open(join(ROOT_DIR, DATA, dataset, "logs", task_id + ".txt"), "r") as logFile:
+                    with open(logsPath, "r") as logFile:
                         response = {
                             'code': 200,
                             'state': "EXPIRED",
                             'logs': "\n".join(logFile.readlines())
                         }
                 except Exception as e:
-                    response = {
-                        'code': 404,
-                        'state': 'NOT FOUND',
-                    }
+                    return 'NOT FOUND', 404
         elif task.state == "PROGRESS":
-                response = {
-                    'code': task.info.get('code', 102),
-                    'state': task.state,
-                }
+                if not os.path.isfile(logsPath):
+                    response = {
+                        'code': task.info.get('code', 102),
+                        'state': task.state,
+                    }
+                else:
+                    with open(logsPath, "r") as logFile:  
+                        response = {
+                            'code': task.info.get('code', 102),
+                            'state': task.state,
+                            'logs': "\n".join(logFile.readlines())
+                        }
         elif task.state == "SUCCESS":
-                with open(join(ROOT_DIR, DATA, dataset, "logs", task_id + ".txt"), "r") as logFile:  
+                with open(logsPath, "r") as logFile:  
                     response = {
                         'code': task.info.get('code', 102),
                         'state': task.state,
                         'logs': "\n".join(logFile.readlines())
                     }
         elif task.state == "FAILURE":
-                with open(join(ROOT_DIR, DATA, dataset, "logs", task_id + ".txt"), "r") as logFile:  
+                with open(logsPath, "r") as logFile:  
                     response = {
                         'code': task.info.get('code', 102),
                         'state': task.state,
