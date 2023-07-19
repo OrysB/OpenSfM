@@ -7,6 +7,8 @@ launch.json
 .vscode
 .idea
 
+flask/.env
+
 # Ignore generated files
 /build
 /cmake_build
