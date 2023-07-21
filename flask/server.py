@@ -215,7 +215,7 @@ def get_image(dataset, shot_id) -> Response:
     return verified_send(path)
 
 @app.route("/<path:dataset>/image", methods =["POST"])
-@limit_content_length(1048576 * MAX_FILE_SIZE)
+@limit_content_length(1000 * 1000 * MAX_FILE_SIZE)
 def post_image(dataset) -> Response:
     if 'file' not in request.files:
             return 'missing file', 400
