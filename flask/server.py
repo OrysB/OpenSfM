@@ -27,7 +27,7 @@ from flask import (
     request,
     redirect,
 )
-
+from functools import wraps
 import uuid
 import time
 
@@ -37,6 +37,7 @@ ROOT_DIR = os.getenv("ROOT_DIR")
 DATA_DIR = os.getenv("DATA_DIR")
 DATA = join(ROOT_DIR, DATA_DIR)
 IMAGES = os.getenv("IMAGES_DIR")
+MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE"))
 
 COMMAND_LIST = ["all", "extract_metadata", "detect_features", "match_features", "create_tracks", "reconstruct", "mesh", "undistort", "compute_depthmaps"]
 ALLOWED_IMAGE_FORMATS = ['png', 'jpg']
@@ -61,6 +62,18 @@ app.config.from_mapping(
         result_backend=os.getenv("CELERY_RESULT_BACKEND")
     ),
 )
+
+def limit_content_length(max_length):
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            cl = request.content_length
+            if cl is not None and cl > max_length:
+                abort(413)
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+
 celery_app = celery_init_app(app)
 
 @shared_task(bind = True, ignore_result=False, track_started=True)
@@ -202,6 +215,7 @@ def get_image(dataset, shot_id) -> Response:
     return verified_send(path)
 
 @app.route("/<path:dataset>/image", methods =["POST"])
+@limit_content_length(1048576 * MAX_FILE_SIZE)
 def post_image(dataset) -> Response:
     if 'file' not in request.files:
             return 'missing file', 400
